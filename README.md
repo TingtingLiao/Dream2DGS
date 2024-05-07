@@ -2,8 +2,8 @@
 An implementation of the text-to-3D model based on [**2D Gaussian Splatting**](https://github.com/hbb1/2d-gaussian-splatting) and [**DreamGaussian**](https://dreamgaussian.github.io/).
 
 
-https://github.com/TingtingLiao/Dream2DGS/assets/45743512/5d98db75-672e-4882-af32-8364533a36e2
 
+https://github.com/TingtingLiao/Dream2DGS/assets/45743512/44bff53e-e4c4-45da-99ca-588dcded798f
 
 
 ## Install
@@ -31,14 +31,16 @@ pip install git+https://github.com/bytedance/ImageDream/#subdirectory=extern/Ima
 
 ## Usage 
 ```bash   
-# image-to-3d (zero123)
-python main.py --config configs/image.yaml input=data/anya_rgba.png save_path=anya 
+# image-to-3d (zero123)  
+python main.py --config configs/image.yaml input=data/csm_luigi_rgba.png save_path=csm_luigi 
+
+# extract mesh  
+python convert.py --model_path logs/csm_luigi/csm_luigi.ply  
 
 # text-to-3d (mvdream)
-python main.py --config configs/text_mv.yaml prompt="a plush toy of a corgi nurse" save_path=corgi_nurse --iters 500 
+python main.py --config configs/text_mv.yaml prompt="a plush toy of a corgi nurse" save_path=corgi_nurse  
  
-# extract mesh  
-python convert.py --model_path logs/corgi_nurse/corgi_nurse_gs.ply  
+ 
 ```
 
 # Acknowledgement 
@@ -64,14 +66,3 @@ python convert.py --model_path logs/corgi_nurse/corgi_nurse_gs.ply
     year={2023}
     } 
     ```
-
-# Citation
-
-If you find this work useful, a citation will be appreciated via:
-```
-@misc{Dream2DGS,
-    Author = {Tingting Liao},
-    Year = {2024},
-    Note = {https://github.com/TingtingLiao/dream2dgs},
-    Title = {Dream2DGS: Text-to-3D with 2D Guassian Splatting}
-}
