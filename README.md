@@ -57,7 +57,7 @@ python render.py --model_path logs/corgi_nurse/corgi_nurse_gs.ply
     author={Tang, Jiaxiang and Ren, Jiawei and Zhou, Hang and Liu, Ziwei and Zeng, Gang},
     journal={arXiv preprint arXiv:2309.16653},
     year={2023}
-    }
+    } 
     ```
 
 # Citation
