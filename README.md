@@ -65,17 +65,3 @@ python main.py --config configs/text_mv.yaml prompt="a plush toy of a corgi nurs
     year={2023}
     } 
     ```
-<<<<<<< HEAD
-=======
-
-# Citation
-
-If you find this work useful, a citation will be appreciated via:
-```
-@misc{Dream2DGS,
-    Author = {Tingting Liao},
-    Year = {2024},
-    Note = {https://github.com/TingtingLiao/dream2dgs},
-    Title = {Dream2DGS: Text-to-3D with 2D Guassian Splatting}
-}
->>>>>>> feb0a7651caa90bb861c3ab9213857925770db0d

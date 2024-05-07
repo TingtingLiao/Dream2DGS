@@ -28,10 +28,13 @@ stable_zero123: False
 # guidance loss weights (0 to disable)
 lambda_sd: 0
 lambda_zero123: 1
+lambda_normal: 0.05 
+lambda_distortion: 100 
+
 # warmup rgb supervision for image-to-3d
 warmup_rgb_loss: True
 # training batch size per iter
-batch_size: 4
+batch_size: 2
 # training iterations for stage 1
 iters: 500
 # whether to linearly anneal timestep
@@ -78,6 +81,9 @@ density_end_iter: 3000
 densification_interval: 100
 opacity_reset_interval: 700
 densify_grad_threshold: 0.01
+densify_min_opacity: 0.01 
+densify_extent: 4
+densify_max_screen_size: 1 
 
 ### Textured Mesh
 geom_lr: 0.0001

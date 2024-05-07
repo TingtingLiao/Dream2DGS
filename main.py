@@ -214,8 +214,8 @@ class GUI:
             # kiui.vis.plot_image(torch.cat([mask, self.input_mask_torch], dim=-1), save=True, prefix=f"{log_dir}/mask/{self.step:05d}")
                 
         ## novel view (manual batch)
-        # render_resolution = 128 if step_ratio < 0.3 else (256 if step_ratio < 0.6 else 512)
-        render_resolution = 512
+        render_resolution = 128 if step_ratio < 0.3 else (256 if step_ratio < 0.6 else 512)
+        # render_resolution = 512
         images = [] 
         depths = []
         rend_normals = [] 
@@ -268,13 +268,13 @@ class GUI:
                     surf_normals.append(out_i["surf_normal"])
                     rend_dist.append(out_i["rend_dist"])
  
-        if self.step % 50 == 0:  
-            # save image 
-            kiui.vis.plot_image(torch.cat(images, dim=-1).clamp(0, 1).unsqueeze(0), save=True, prefix=f"{log_dir}/rgb/{self.step:05d}")
+        # if self.step % 50 == 0:  
+        #     # save image 
+        #     kiui.vis.plot_image(torch.cat(images, dim=-1).clamp(0, 1).unsqueeze(0), save=True, prefix=f"{log_dir}/rgb/{self.step:05d}")
 
-            # save normal 
-            vis_normal = torch.cat([torch.cat(rend_normals, -1), torch.cat(surf_normals, -1)], dim=-2)
-            kiui.vis.plot_image(vis_normal.unsqueeze(0) * 0.5 + 0.5, save=True, prefix=f"{log_dir}/normal/{self.step:05d}")
+        #     # save normal 
+        #     vis_normal = torch.cat([torch.cat(rend_normals, -1), torch.cat(surf_normals, -1)], dim=-2)
+        #     kiui.vis.plot_image(vis_normal.unsqueeze(0) * 0.5 + 0.5, save=True, prefix=f"{log_dir}/normal/{self.step:05d}")
 
 
         images = torch.stack(images, dim=0) 
@@ -284,14 +284,12 @@ class GUI:
         poses = torch.from_numpy(np.stack(poses, axis=0)).to(self.device)
         rend_dist = torch.stack(rend_dist, dim=0)
             
-        # normal loss 
-        lambda_normal = 0.05  
+        # normal loss  
         normal_error = (1 - (rend_normals * surf_normals).sum(dim=0))[None]
-        loss += lambda_normal * (normal_error).mean()
+        loss += self.opt.lambda_normal * (normal_error).mean()
         
-        # dist loss 
-        lambda_dist = 100 
-        loss += lambda_dist * rend_dist.mean()
+        # distortion loss  
+        loss += self.opt.lambda_distortion * rend_dist.mean()
 
         # guidance loss
         if self.enable_sd:
@@ -318,9 +316,14 @@ class GUI:
             self.renderer.gaussians.max_radii2D[visibility_filter] = torch.max(self.renderer.gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
             self.renderer.gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-            if self.step % self.opt.densification_interval == 0:
-                self.renderer.gaussians.densify_and_prune(self.opt.densify_grad_threshold, min_opacity=0.01, extent=4, max_screen_size=1)
-            
+            if self.step % self.opt.densification_interval == 0: 
+                self.renderer.gaussians.densify_and_prune(
+                    self.opt.densify_grad_threshold, 
+                    min_opacity=self.opt.densify_min_opacity, 
+                    extent=self.opt.densify_extent,  
+                    max_screen_size=self.opt.densify_max_screen_size, 
+                    )
+ 
             if self.step % self.opt.opacity_reset_interval == 0:
                 self.renderer.gaussians.reset_opacity()
 
@@ -962,6 +965,7 @@ class GUI:
         video_color.release()
         video_rand_normal.release()
         video_surf_normal.release()
+        print(f"[INFO] 360 video saved to {log_dir}.")
 
     @torch.no_grad()
     def extract_mesh(self, density_thresh=0.1):
@@ -973,7 +977,8 @@ class GUI:
         if iters > 0:
             self.prepare_train()
             for i in tqdm.trange(iters):
-                self.train_step() 
+                self.train_step()
+                # self.renderer.gaussians.prune(min_opacity=0.01, extent=1, max_screen_size=1)
             print(f"[INFO] training done!")
 
         self.render_360_video()
@@ -986,15 +991,13 @@ if __name__ == "__main__":
     from omegaconf import OmegaConf
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True, help="path to the yaml config file")
-    parser.add_argument("--iters", type=int, default=500, help="number of iterations to train")
+    parser.add_argument("--config", required=True, help="path to the yaml config file") 
     args, extras = parser.parse_known_args()
 
     # override default config from cli
-    opt = OmegaConf.merge(OmegaConf.load(args.config), OmegaConf.from_cli(extras))
-    opt.iters = args.iters
+    opt = OmegaConf.merge(OmegaConf.load(args.config), OmegaConf.from_cli(extras)) 
     gui = GUI(opt)
-
+    
     if opt.gui:
         gui.render()
     else:
