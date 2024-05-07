@@ -38,8 +38,6 @@ python convert.py --model_path logs/csm_luigi/csm_luigi.ply
 
 # text-to-3d (mvdream)
 python main.py --config configs/text_mv.yaml prompt="a plush toy of a corgi nurse" save_path=corgi_nurse  
- 
- 
 ```
 
 # Acknowledgement 
