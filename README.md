@@ -1,6 +1,11 @@
 # Dream2DGS
 An implementation of the text-to-3D model based on [**2D Gaussian Splatting**](https://github.com/hbb1/2d-gaussian-splatting) and [**DreamGaussian**](https://dreamgaussian.github.io/).
 
+
+https://github.com/TingtingLiao/Dream2DGS/assets/45743512/5d98db75-672e-4882-af32-8364533a36e2
+
+
+
 ## Install
 
 ```bash
@@ -33,7 +38,7 @@ python main.py --config configs/image.yaml input=data/anya_rgba.png save_path=an
 python main.py --config configs/text_mv.yaml prompt="a plush toy of a corgi nurse" save_path=corgi_nurse --iters 500 
  
 # extract mesh  
-python render.py --model_path logs/corgi_nurse/corgi_nurse_gs.ply  
+python convert.py --model_path logs/corgi_nurse/corgi_nurse_gs.ply  
 ```
 
 # Acknowledgement 
