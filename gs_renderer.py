@@ -54,10 +54,9 @@ class MiniCam:
         self.camera_center = -torch.tensor(c2w[:3, 3]).cuda()
  
 class Renderer:
-    def __init__(self, sh_degree=3, white_background=True, radius=1):
+    def __init__(self, sh_degree=3, white_background=True):
         self.sh_degree = sh_degree
-        self.white_background = white_background
-        self.radius = radius
+        self.white_background = white_background 
         self.gaussians = GaussianModel(sh_degree)
 
         self.bg_color = torch.tensor(
@@ -202,8 +201,8 @@ class Renderer:
         render_alpha = allmap[1:2]
 
         # get normal map
-        render_normal = allmap[2:5]
-        render_normal = (render_normal.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1)
+        render_normal_world = allmap[2:5]
+        render_normal_camera = (render_normal_world.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1)
         
         # get median depth map
         render_depth_median = allmap[5:6]
@@ -228,7 +227,7 @@ class Renderer:
         surf_normal = surf_normal.permute(2,0,1)
         surf_point = surf_point.permute(2,0,1)
         # remember to multiply with accum_alpha since render_normal is unnormalized.
-        surf_normal = surf_normal * (render_alpha).detach()
+        surf_normal = surf_normal * render_alpha.detach()
 
         return {
             "image": rendered_image,
@@ -236,7 +235,8 @@ class Renderer:
             "visibility_filter" : radii > 0,
             "radii": radii,
             'rend_alpha': render_alpha,
-            'rend_normal': render_normal,
+            'rend_normal_world': render_normal_world,
+            'rend_normal': render_normal_camera,
             'rend_dist': render_dist,
             'surf_depth': surf_depth,
             'surf_normal': surf_normal,

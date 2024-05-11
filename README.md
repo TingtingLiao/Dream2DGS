@@ -2,7 +2,7 @@
 An implementation of the text-to-3D model based on [**2D Gaussian Splatting**](https://github.com/hbb1/2d-gaussian-splatting) and [**DreamGaussian**](https://dreamgaussian.github.io/).
 
  
-https://github.com/TingtingLiao/Dream2DGS/assets/45743512/581d30bf-83b0-4e05-9374-26178ffb3d36 
+https://github.com/TingtingLiao/Dream2DGS/assets/45743512/b705fff5-aad9-4dc3-8dd1-b23eb07c40f7
 
 
 ## Install
@@ -27,10 +27,10 @@ pip install git+https://github.com/NVlabs/nvdiffrast/
 pip install -e submodules/diff-surfel-rasterization
 pip install -e submodules/simple-knn
 pip install -e submodules/generative_models
-  
- 
+
+# download pretriained models  
 mkdir checkpoints && cd checkpoints 
-wget https://huggingface.co/stabilityai/sv3d/blob/main/sv3d_p.safetensors  
+wget https://huggingface.co/stabilityai/sv3d/blob/main/sv3d_p.safetensors  # sv3d_p.safetensors
 gdown '1wNxVO4vVbDEMEpnAi_jwQObf2MFodcBR&confirm=t' # omnidata_dpt_normal_v2.ckpt
 cd ..
 ```

@@ -27,13 +27,15 @@ imagedream: False
 stable_zero123: False 
 # use sv3d  
 sv3d: True 
+# use normal estimation 
+dpt: False
 # guidance loss weights (0 to disable)
 lambda_sd: 0
 lambda_zero123: 0.5
 lambda_normal: 0.05 
 lambda_distortion: 100 
 lambda_dssim: 0.2
-lambda_mask: 0.5
+lambda_mask: 1.0
 
 # warmup rgb supervision for image-to-3d
 warmup_rgb_loss: True

@@ -42,7 +42,9 @@ class GUI:
         self.enable_zero123 = False
 
         # renderer
-        self.renderer = Renderer(sh_degree=self.opt.sh_degree)
+        self.renderer = Renderer(sh_degree=self.opt.sh_degree, white_background=self.opt.white_background)
+        self.bg_color = self.renderer.bg_color
+        
         self.gaussain_scale_factor = 1
 
         # input image
@@ -162,15 +164,15 @@ class GUI:
             print(f"[INFO] loaded zero123!")
 
         def np_image_to_tensor(image):
-            return torch.from_numpy(image).float().permute(2, 0, 1).unsqueeze(0).to(self.device)
+            return torch.from_numpy(image).float().permute(2, 0, 1).to(self.device)
 
         def resize_image(image):
             return F.interpolate(image, (self.opt.ref_size, self.opt.ref_size), mode="bilinear", align_corners=False)
 
         # input image
         if self.input_img is not None:
-            self.input_img_torch = resize_image(np_image_to_tensor(self.input_img)) 
-            self.input_mask_torch = resize_image(np_image_to_tensor(self.input_mask)) 
+            self.input_img_torch = resize_image(np_image_to_tensor(self.input_img).unsqueeze(0)).squeeze(0) 
+            self.input_mask_torch = resize_image(np_image_to_tensor(self.input_mask).unsqueeze(0)).squeeze(0) 
             
             # svd 
             if self.opt.sv3d:
@@ -194,16 +196,16 @@ class GUI:
                     self.mv_cameras = [] 
                     self.mv_masks = [] 
                     
-                    for yaw, image in zip(azimuths_deg, video):
-                        # image = resize_image(np_image_to_tensor(image / 255 ))  
-
+                    for yaw, image in zip(azimuths_deg, video):  
                         # segmentation
                         image = rembg.remove(image[..., ::-1], session=self.bg_remover) / 255.0 
                         image = cv2.resize(image, (self.opt.ref_size, self.opt.ref_size), interpolation=cv2.INTER_AREA)
 
                         mask = image[..., 3:] > 0 
-
-                        img = image[..., :3] * mask + (1 - mask)
+                        img = image[..., :3] * mask 
+                        if self.opt.white_background:
+                            img += (1 - mask) 
+                        
                         img = img[..., ::-1].copy()
                         img = np_image_to_tensor(img)
                         mask = np_image_to_tensor(mask)
@@ -214,17 +216,23 @@ class GUI:
                         self.mv_cameras.append(MiniCam(pose, **camera_setting))  
                         self.mv_images.append(img)
                         self.mv_masks.append(mask)
-                    
-                    # from dpt import DepthNormalEstimation
-                    # noraml estimation
-                    # normal_estimate_model = DepthNormalEstimation(ckpt_path=self.opt.normal_ckpt_path)  
-                    # normals = normal_estimate_model(torch.cat(self.mv_images))
-                    # print(normals.shape)
-                    # exit()
+                     
+                    # selected ids 
+                    # ids = [0, 4, 8, 12]
+                    # self.mv_cameras = [self.mv_cameras[i] for i in ids]
+                    # self.mv_images = [self.mv_images[i] for i in ids]
+                    # self.mv_masks = [self.mv_masks[i] for i in ids]
+
+                    if self.opt.dpt:
+                        from dpt import DepthNormalEstimation
+                        # noraml estimation
+                        normal_estimate_model = DepthNormalEstimation(ckpt_path=self.opt.normal_ckpt_path)  
+                        normals = normal_estimate_model(torch.stack(self.mv_images)).clamp(min=0, max=1)
+                        normals = normals * torch.stack(self.mv_masks)  + (1 - torch.stack(self.mv_masks))
+                        self.mv_normals = normals * 2 - 1 
 
         # prepare embeddings
         with torch.no_grad():
-
             if self.enable_sd:
                 if self.opt.imagedream:
                     self.guidance_sd.get_image_text_embeds(self.input_img_torch, [self.prompt], [self.negative_prompt])
@@ -316,30 +324,41 @@ class GUI:
         return loss 
 
     def get_known_view_loss(self):
+        
         if self.opt.sv3d:
             idx = random.randint(0, len(self.mv_images)-1)
-            cam, gt_image, gt_mask = self.mv_cameras[idx], self.mv_images[idx], self.mv_masks[idx]
+            cam, gt_image, gt_mask = self.mv_cameras[idx], self.mv_images[idx], self.mv_masks[idx] 
         else:
             cam, gt_image, gt_mask = self.fixed_cam, self.input_img_torch, self.input_mask_torch    
 
-        gs_out = self.renderer.render(cam)
-
-        rander_image = gs_out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]  
-        loss = (1.0 - self.opt.lambda_dssim) * l1_loss(rander_image, gt_image) + self.opt.lambda_dssim * (1.0 - ssim(rander_image, gt_image))
+        gs_out = self.renderer.render(cam) 
+        image, alpha, rend_normal, surf_normal = gs_out["image"], gs_out["rend_alpha"], gs_out["rend_normal"], gs_out["surf_normal"]
+        
+        # image loss 
+        loss = (1.0 - self.opt.lambda_dssim) * l1_loss(image, gt_image) + self.opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         
         # mask loss  
         # if self.step % 10 == 0:
-        loss += self.opt.lambda_mask * l1_loss(gs_out["rend_alpha"].unsqueeze(0), gt_mask)
+        # loss += self.opt.lambda_mask * l1_loss(gs_out["rend_alpha"], gt_mask)
 
-        # normal loss   
-        if self.step > 7000: 
-            normal_error = (1 - (gs_out["rend_normal"] * gs_out["surf_normal"]).sum(dim=0))[None]
-            loss += self.opt.lambda_normal * normal_error.mean()
-        
+        # mask loss 
+        pool = torch.nn.MaxPool2d(9, stride=1, padding=4)
+        loss  += self.opt.lambda_mask * (alpha * (1 - pool(gt_mask))).mean()
+
         # distortion loss  
         if self.step > 3000:
             loss += self.opt.lambda_dist * gs_out["rend_dist"].mean()
+             
+        # normal loss   
+        if self.step > 7000:  
+            loss += self.opt.lambda_normal * (1 - (rend_normal * surf_normal).sum(dim=0)).mean()    
 
+            if self.opt.dpt:
+                gt_normal = self.mv_normals[idx] if self.opt.sv3d else self.input_normal_torch
+                loss += self.opt.lambda_normal_dpt * (1 - (gs_out["rend_normal_world"] * gt_normal).sum(dim=0)).mean() 
+            # debug_nml = torch.cat([gs_out["rend_normal_world"] * 0.5 + 0.5, gt_normal], dim=2).permute(1, 2, 0).detach().cpu().numpy() 
+            # cv2.imwrite(f'{self.opt.outdir}/debug_normal_{self.step}.png', (debug_nml[..., ::-1] * 255).astype(np.uint8))
+ 
         return loss, gs_out
 
     def train_step(self):
@@ -369,13 +388,10 @@ class GUI:
  
         # optimize step
         loss.backward()
-        # self.optimizer.step()
-        # self.optimizer.zero_grad(set_to_none = True)
-        self.renderer.gaussians.optimizer.step()
-        self.renderer.gaussians.optimizer.zero_grad(set_to_none = True)
-
+        ender.record()
+        
         with torch.no_grad():
-            # densify and prune
+            # Densification
             if self.step < opt.density_end_iter:
                 viewspace_point_tensor, visibility_filter, radii = gs_out["viewspace_points"], gs_out["visibility_filter"], gs_out["radii"]
                 self.renderer.gaussians.max_radii2D[visibility_filter] = torch.max(self.renderer.gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
@@ -392,8 +408,10 @@ class GUI:
         
                 if self.step % self.opt.opacity_reset_interval == 0:
                     self.renderer.gaussians.reset_opacity()
-
-        ender.record()
+            
+            self.renderer.gaussians.optimizer.step()
+            self.renderer.gaussians.optimizer.zero_grad(set_to_none = True)
+       
         torch.cuda.synchronize()
         t = starter.elapsed_time(ender)
 
@@ -997,7 +1015,7 @@ class GUI:
         os.makedirs(log_dir, exist_ok=True)
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')   
         
-        out_video = cv2.VideoWriter(f'{log_dir}/out.mp4', fourcc, 30.0, (render_res*3, render_res))
+        out_video = cv2.VideoWriter(f'{log_dir}/out.mp4', fourcc, num_cameras / 4, (render_res*3, render_res))
          
         yaws = torch.linspace(0, 360, num_cameras) 
 

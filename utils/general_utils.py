@@ -130,7 +130,7 @@ def build_scaling_rotation(s, r):
 
 
 def depths_to_points(view, depthmap):
-    c2w = (view.world_view_transform.T).inverse()
+    c2w = (view.world_view_transform.T).inverse() 
     W, H = view.image_width, view.image_height
     fx = W / (2 * math.tan(view.FoVx / 2.))
     fy = H / (2 * math.tan(view.FoVy / 2.))
