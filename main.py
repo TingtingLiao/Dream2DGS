@@ -992,7 +992,7 @@ class GUI:
             dpg.render_dearpygui_frame()
     
     @torch.no_grad()
-    def render_360_video(self, num_cameras=120, render_res=512): 
+    def render_360_video(self, num_cameras=60, render_res=512): 
         log_dir = os.path.join(self.opt.outdir, self.opt.save_path)  
         os.makedirs(log_dir, exist_ok=True)
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')   
