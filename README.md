@@ -28,10 +28,11 @@ pip install -e submodules/diff-surfel-rasterization
 pip install -e submodules/simple-knn
 pip install -e submodules/generative_models
   
-cd ../ 
-mkdir checkpoints 
+ 
+mkdir checkpoints && cd checkpoints 
+wget https://huggingface.co/stabilityai/sv3d/blob/main/sv3d_p.safetensors  
 gdown '1wNxVO4vVbDEMEpnAi_jwQObf2MFodcBR&confirm=t' # omnidata_dpt_normal_v2.ckpt
-
+cd ..
 ```
 
 ## Usage 
