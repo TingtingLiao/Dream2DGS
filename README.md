@@ -1,8 +1,8 @@
 # Dream2DGS
 An implementation of the text-to-3D model based on [**2D Gaussian Splatting**](https://github.com/hbb1/2d-gaussian-splatting) and [**DreamGaussian**](https://dreamgaussian.github.io/).
 
-
-https://github.com/TingtingLiao/Dream2DGS/assets/45743512/44bff53e-e4c4-45da-99ca-588dcded798f
+ 
+https://github.com/TingtingLiao/Dream2DGS/assets/45743512/238e6ba8-44b3-45f1-9dad-7d5a9f232a28
 
 
 ## Install
@@ -10,34 +10,37 @@ https://github.com/TingtingLiao/Dream2DGS/assets/45743512/44bff53e-e4c4-45da-99c
 ```bash
 conda create -n dream2dgs python=3.9 
 
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+# torch2.3.0+cu12.1 
+pip3 install torch torchvision torchaudio
+
+# xformers  
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu121
  
 pip install -r requirements.txt
+  
+# mvdream 
+pip install git+https://github.com/bytedance/MVDream
 
 # nvdiffrast
 pip install git+https://github.com/NVlabs/nvdiffrast/
+ 
+pip install -e submodules/diff-surfel-rasterization
+pip install -e submodules/simple-knn
+pip install -e submodules/generative_models
+  
+cd ../ 
+mkdir checkpoints 
+gdown '1wNxVO4vVbDEMEpnAi_jwQObf2MFodcBR&confirm=t' # omnidata_dpt_normal_v2.ckpt
 
-cd submodules/
-pip install -e diff-surfel-rasterization
-pip install -e simple-knn
-
-# To use MVdream, also install:
-pip install git+https://github.com/bytedance/MVDream
-
-# To use ImageDream, also install:
-pip install git+https://github.com/bytedance/ImageDream/#subdirectory=extern/ImageDream
 ```
 
 ## Usage 
 ```bash   
-# image-to-3d (zero123)  
-python main.py --config configs/image.yaml input=data/csm_luigi_rgba.png save_path=csm_luigi 
-
+# image-to-3d (sv3d)  
+python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_path=zelda
+ 
 # extract mesh  
-python convert.py --model_path logs/csm_luigi/csm_luigi.ply  
-
-# text-to-3d (mvdream)
-python main.py --config configs/text_mv.yaml prompt="a plush toy of a corgi nurse" save_path=corgi_nurse  
+python convert.py --model_path logs/zelda/zelda.ply  
 ```
 
 # Acknowledgement 

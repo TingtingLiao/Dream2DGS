@@ -102,7 +102,7 @@ class Renderer:
         override_color=None, 
         compute_cov3D_python=False,
         convert_SHs_python=False, 
-        depth_ratio=0
+        depth_ratio=0.1
     ):
 
         """
@@ -220,7 +220,7 @@ class Renderer:
         # psedo surface attributes
         # surf depth is either median or expected by setting depth_ratio to 1 or 0
         # for bounded scene, use median depth, i.e., depth_ratio = 1; 
-        # for unbounded scene, use expected depth, i.e., depth_ration = 0, to reduce disk anliasing.
+        # for unbounded scene, use expected depth, i.e., depth_ratio = 0, to reduce disk anliasing.
         surf_depth = render_depth_expected * (1-depth_ratio) + depth_ratio * render_depth_median
         
         # assume the depth points form the 'surface' and generate psudo surface normal for regularizations.

@@ -55,13 +55,12 @@ def to_cam_open3d(viewpoint_stack):
     for i, viewpoint_cam in enumerate(viewpoint_stack):
         intrinsic=o3d.camera.PinholeCameraIntrinsic(
             width=viewpoint_cam.image_width, 
-                    height=viewpoint_cam.image_height, 
-                    cx = viewpoint_cam.image_width/2,
-                    cy = viewpoint_cam.image_height/2,
-                    fx = viewpoint_cam.image_width / (2 * math.tan(viewpoint_cam.FoVx / 2.)),
-                    fy = viewpoint_cam.image_height / (2 * math.tan(viewpoint_cam.FoVy / 2.))
-                    )
-
+            height=viewpoint_cam.image_height, 
+            cx = viewpoint_cam.image_width/2,
+            cy = viewpoint_cam.image_height/2,
+            fx = viewpoint_cam.image_width / (2 * math.tan(viewpoint_cam.FoVx / 2.)),
+            fy = viewpoint_cam.image_height / (2 * math.tan(viewpoint_cam.FoVy / 2.))
+            ) 
         extrinsic=np.asarray((viewpoint_cam.world_view_transform.T).cpu().numpy())
         camera = o3d.camera.PinholeCameraParameters()
         camera.extrinsic = extrinsic

@@ -14,8 +14,7 @@ torchmetrics
 einops
 plyfile
 pygltflib 
-dearpygui 
-# for stable-diffusion
+dearpygui  
 huggingface_hub
 diffusers
 accelerate
@@ -24,7 +23,7 @@ xatlas
 trimesh
 PyMCubes
 pymeshlab
-
+kornia
 rembg[gpu,cli] 
 mediapy
 gradio
@@ -33,4 +32,7 @@ nerfacc
 kiui
 fast_simplification
 fpsample
-git+https://github.com/NVlabs/nvdiffrast/
+pytorch_lightning
+open-clip-torch 
+invisible-watermark 
+open3d
