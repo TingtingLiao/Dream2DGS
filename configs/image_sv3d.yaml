@@ -29,7 +29,7 @@ stable_zero123: False
 # use sv3d  
 sv3d: True 
 # use normal estimation 
-dpt: False
+dpt: True
 # guidance loss weights (0 to disable)
 lambda_sd: 0
 lambda_zero123: 0

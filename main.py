@@ -303,7 +303,7 @@ class GUI:
         poses = torch.from_numpy(np.stack(poses, axis=0)).to(self.device)
         rend_dist = torch.stack(rend_dist, dim=0)
             
-        # # normal loss  
+        # normal loss  
         # normal_error = (1 - (rend_normals * surf_normals).sum(dim=0))[None]
         # loss += self.opt.lambda_normal * (normal_error).mean()
         
@@ -321,7 +321,8 @@ class GUI:
                  
         if self.enable_zero123: 
             loss = loss + self.opt.lambda_zero123 * self.guidance_zero123.train_step(images, vers, hors, radii, step_ratio=step_ratio if self.opt.anneal_timestep else None, default_elevation=self.opt.elevation)
-        return loss 
+        return loss, out_i
+
 
     def get_known_view_loss(self):
         
@@ -356,9 +357,7 @@ class GUI:
             if self.opt.dpt:
                 gt_normal = self.mv_normals[idx] if self.opt.sv3d else self.input_normal_torch
                 loss += self.opt.lambda_normal_dpt * (1 - (gs_out["rend_normal_world"] * gt_normal).sum(dim=0)).mean() 
-            # debug_nml = torch.cat([gs_out["rend_normal_world"] * 0.5 + 0.5, gt_normal], dim=2).permute(1, 2, 0).detach().cpu().numpy() 
-            # cv2.imwrite(f'{self.opt.outdir}/debug_normal_{self.step}.png', (debug_nml[..., ::-1] * 255).astype(np.uint8))
- 
+
         return loss, gs_out
 
     def train_step(self):
@@ -379,12 +378,15 @@ class GUI:
 
         loss = 0
 
-        ### known view
+        # known view
         if self.input_img_torch is not None and not self.opt.imagedream and self.step % 1 == 0: 
-            loss, gs_out = self.get_known_view_loss()
+            known_view_loss, gs_out = self.get_known_view_loss()
+            loss += known_view_loss
         
+        # novel view
         if self.enable_sd or self.enable_zero123:
-            loss = loss + self.calc_noval_view_loss(step_ratio, loss, log_dir)
+            guidance_loss, gs_out = self.calc_noval_view_loss(step_ratio, loss, log_dir)
+            loss += guidance_loss
  
         # optimize step
         loss.backward()
