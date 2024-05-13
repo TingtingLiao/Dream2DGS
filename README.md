@@ -1,8 +1,8 @@
 # Dream2DGS
 An implementation of the text-to-3D model based on [**2D Gaussian Splatting**](https://github.com/hbb1/2d-gaussian-splatting) and [**DreamGaussian**](https://dreamgaussian.github.io/).
-
  
-https://github.com/TingtingLiao/Dream2DGS/assets/45743512/b705fff5-aad9-4dc3-8dd1-b23eb07c40f7
+ 
+https://github.com/TingtingLiao/Dream2DGS/assets/45743512/8e16dab5-0369-4405-8d1c-57c205c9c0a7
 
 
 ## Install
@@ -39,7 +39,7 @@ cd ..
 ```bash   
 # image-to-3d (sv3d)  
 python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_path=zelda
- 
+   
 # extract mesh  
 python convert.py --model_path logs/zelda/zelda.ply  
 ```

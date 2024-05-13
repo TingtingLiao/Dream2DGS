@@ -9,6 +9,8 @@ import torch
 import torch.nn.functional as F
 import random 
 import rembg
+import imageio
+from PIL import Image
 
 from utils.cam_utils import orbit_camera, OrbitCamera, fov2focal 
 from utils.grid_put import mipmap_linear_grid_put_2d
@@ -60,21 +62,30 @@ class GUI:
         self.negative_prompt = ""
 
         # training stuff
-        self.training = False
-        self.optimizer = None
+        self.training = False 
         self.step = 0
         self.train_steps = 1  # steps per rendering loop
-        
-        # load input data from cmdline
-        if self.opt.input is not None:
-            self.load_input(self.opt.input)
         
         # override prompt from cmdline
         if self.opt.prompt is not None:
             self.prompt = self.opt.prompt
-        if self.opt.negative_prompt is not None:
-            self.negative_prompt = self.opt.negative_prompt
+            if self.opt.negative_prompt is not None:
+                self.negative_prompt = self.opt.negative_prompt 
 
+            text2image_path = os.path.join(self.opt.outdir, self.opt.save_path, "text2image.png")
+            self.text_to_image(save_path=text2image_path)
+            self.opt.input = text2image_path    
+      
+        # load input data from cmdline
+        if self.opt.input is not None:
+            # self.load_input(self.opt.input)
+            mv_np_images, self.mv_cameras = self.image_to_video() 
+            
+            self.mv_images, self.mv_masks = self.image_segmentation(mv_np_images)
+        
+        if self.opt.dpt:
+            self.normal_prediction()
+         
         # override if provide a checkpoint
         if self.opt.load is not None:
             self.renderer.initialize(self.opt.load)            
@@ -90,6 +101,147 @@ class GUI:
     def __del__(self):
         if self.gui:
             dpg.destroy_context()
+ 
+    @torch.no_grad()
+    def normal_prediction(self):
+        from dpt import DepthNormalEstimation 
+        dpt_model = DepthNormalEstimation(ckpt_path=self.opt.normal_ckpt_path)  
+        normals = dpt_model(torch.stack(self.mv_images)).clamp(min=0, max=1) * 2 - 1    
+        self.mv_normals = normals * torch.stack(self.mv_masks)   
+
+    @torch.no_grad()
+    def text_to_image(self, num_frames=4, suffix=", 3d asset", image_size=256, save_path=None):
+        from mvdream.model_zoo import build_model
+        from mvdream.ldm.models.diffusion.ddim import DDIMSampler
+        from mvdream.camera_utils import get_camera
+
+        device = self.device  
+        batch_size = max(4, num_frames)
+
+        # load mvdream  
+        model = build_model("sd-v2.1-base-4view")  
+        model.device = device
+        model.to(device)
+        model.eval()
+ 
+        camera = get_camera(num_frames, elevation=0, azimuth_start=90, azimuth_span=360) 
+        camera = camera.repeat(batch_size//num_frames,1).to(device)
+ 
+        # with torch.autocast(device_type="cuda", dtype=torch.float16):
+        print("self.prompt: ", self.prompt)
+        c = model.get_learned_conditioning([self.prompt+suffix]).to(device) 
+        uc = model.get_learned_conditioning([self.negative_prompt]).to(device)
+        uc_ = {
+            "context": uc.repeat(batch_size,1,1), 
+            "camera": camera,
+            "num_frames": num_frames
+        } 
+        c_ = {
+            "context": c.repeat(batch_size,1,1),
+            "camera": camera,
+            "num_frames": num_frames
+        }
+
+        shape = [4, image_size // 8, image_size // 8]
+        sampler = DDIMSampler(model)
+        samples_ddim, _ = sampler.sample(S=50, conditioning=c_,
+                                        batch_size=batch_size, 
+                                        shape=shape,
+                                        verbose=False, 
+                                        unconditional_guidance_scale=7.5,
+                                        unconditional_conditioning=uc_,
+                                        eta=0.0, x_T=None)
+        x_sample = model.decode_first_stage(samples_ddim)
+        x_sample = torch.clamp((x_sample + 1.0) / 2.0, min=0.0, max=1.0)    
+        x_sample = F.interpolate(x_sample, (image_size * 2, image_size* 2), mode="bilinear", align_corners=False)
+        mv_images = (255. * x_sample.permute(0,2,3,1).cpu().numpy()).astype(np.uint8)
+        mv_cameras = self.get_cameras(0, range(0, 360, 360//num_frames), radius=self.opt.radius)
+         
+        if save_path:  
+            os.makedirs(os.path.dirname(save_path), exist_ok=True) 
+            rembg.remove(Image.fromarray(mv_images[0]), session=self.bg_remover).save(save_path)     
+            print(f'[INFO] save image to {save_path}...') 
+        
+        torch.cuda.empty_cache()
+        return mv_images, mv_cameras
+    
+    @torch.no_grad()
+    def image_to_video(self):
+        from guidance.sv3d import build_sv3d_model
+        from guidance.sv3d import sample as sv3d_pipe 
+        sv3d_model = build_sv3d_model(num_steps=30, device=self.device)
+
+        azimuths_deg = list(np.linspace(0, 360, 22) % 360)[1:]  
+        frames = sv3d_pipe( 
+            model=sv3d_model, 
+            input_path=self.opt.input,
+            version='sv3d_p',
+            elevations_deg=self.opt.elevation,
+            azimuths_deg=azimuths_deg 
+        )
+          
+        # _frames = sv3d_pipe( 
+        #     model=sv3d_model, 
+        #     input_path=self.opt.input,
+        #     version='sv3d_p',
+        #     elevations_deg=self.opt.elevation,
+        #     azimuths_deg=azimuths_deg[1::2]
+        # )
+        # frames = [item for pair in zip(frames, _frames) for item in pair]
+ 
+        os.makedirs(f'{self.opt.outdir}/{self.opt.save_path}', exist_ok=True)
+        imageio.mimwrite(f'{self.opt.outdir}/{self.opt.save_path}/sv3d.mp4', frames)
+
+        torch.cuda.empty_cache() 
+        cameras = self.get_cameras(self.opt.elevation, azimuths_deg, self.opt.radius)
+        return frames, cameras 
+ 
+    @torch.no_grad()
+    def image_segmentation(self, np_images):
+        """ image: [B, H, W, 3] in [0, 255]"""
+        mv_images = [] 
+        mv_masks = []
+
+        # pool = torch.nn.MaxPool2d(9, stride=1, padding=4)
+        for image in np_images:  
+            image = cv2.resize(image, (self.opt.ref_size, self.opt.ref_size), interpolation=cv2.INTER_AREA) 
+            image = np.asarray(rembg.remove(Image.fromarray(image), session=self.bg_remover)) / 255.0 
+            
+            mask, img = image[..., 3:], image[..., :3] 
+             
+            img = torch.from_numpy(img).float().permute(2, 0, 1).to(self.device) 
+            mask = torch.from_numpy(mask).float().permute(2, 0, 1).to(self.device) 
+ 
+            img = img * mask   
+            if self.opt.white_background:
+                img += (1 - mask) 
+            
+            # cv2.imwrite(f'{self.opt.outdir}/{self.opt.save_path}/img.png', (img * mask + (1 - mask)).permute(1, 2, 0).detach().cpu().numpy()[..., ::-1] * 255)
+         
+            mv_images.append(img)
+            mv_masks.append(mask) 
+        return mv_images, mv_masks
+
+    @torch.no_grad()
+    def get_cameras(self, elevation, azimuths_deg, radius):
+        """
+        elevation: int
+        azimuths_deg: list of int
+        radius: float
+        """
+        cameras = []
+        camera_setting = dict(
+            width=self.opt.ref_size,
+            height=self.opt.ref_size,
+            fovy=self.cam.fovy,
+            fovx=self.cam.fovx,
+            znear=self.cam.near,
+            zfar=self.cam.far,
+        )
+        for azimuth in azimuths_deg:
+            pose = orbit_camera(elevation, azimuth, radius)
+            cameras.append(MiniCam(pose, **camera_setting))
+        return cameras
 
     def seed_everything(self):
         try:
@@ -114,8 +266,7 @@ class GUI:
         self.renderer.gaussians.training_setup(self.opt)
         # do not do progressive sh-level
         self.renderer.gaussians.active_sh_degree = self.renderer.gaussians.max_sh_degree
-        self.optimizer = self.renderer.gaussians.optimizer
-
+       
         # default camera
         if self.opt.mvdream or self.opt.imagedream:
             # the second view is the front view for mvdream/imagedream.
@@ -173,64 +324,7 @@ class GUI:
         if self.input_img is not None:
             self.input_img_torch = resize_image(np_image_to_tensor(self.input_img).unsqueeze(0)).squeeze(0) 
             self.input_mask_torch = resize_image(np_image_to_tensor(self.input_mask).unsqueeze(0)).squeeze(0) 
-            
-            # svd 
-            if self.opt.sv3d:
-                from guidance.sv3d import build_sv3d_model
-                from guidance.sv3d import sample as sv3d_pipe
-                  
-                azimuths_deg = [0, 10, 30, 50, 90, 110, 130, 150, 180, 200, 220, 240, 270, 280, 290, 300, 310, 320, 330, 340, 350]
-                
-                with torch.no_grad():
-                    sv3d_model = build_sv3d_model(num_steps=30, device=self.device)
-                    video = sv3d_pipe( 
-                        model=sv3d_model, 
-                        input_path=self.opt.input,
-                        version='sv3d_p',
-                        elevations_deg=self.opt.elevation,
-                        azimuths_deg=azimuths_deg, 
-                        output_folder=f'{self.opt.outdir}/{self.opt.save_path}'
-                    )
-                    
-                    self.mv_images = [] 
-                    self.mv_cameras = [] 
-                    self.mv_masks = [] 
-                    
-                    for yaw, image in zip(azimuths_deg, video):  
-                        # segmentation
-                        image = rembg.remove(image[..., ::-1], session=self.bg_remover) / 255.0 
-                        image = cv2.resize(image, (self.opt.ref_size, self.opt.ref_size), interpolation=cv2.INTER_AREA)
-
-                        mask = image[..., 3:] > 0 
-                        img = image[..., :3] * mask 
-                        if self.opt.white_background:
-                            img += (1 - mask) 
-                        
-                        img = img[..., ::-1].copy()
-                        img = np_image_to_tensor(img)
-                        mask = np_image_to_tensor(mask)
-
-                        pose = orbit_camera(self.opt.elevation, yaw+10, self.opt.radius)
-
-                        # generate segmentation and normal  
-                        self.mv_cameras.append(MiniCam(pose, **camera_setting))  
-                        self.mv_images.append(img)
-                        self.mv_masks.append(mask)
-                     
-                    # selected ids 
-                    # ids = [0, 4, 8, 12]
-                    # self.mv_cameras = [self.mv_cameras[i] for i in ids]
-                    # self.mv_images = [self.mv_images[i] for i in ids]
-                    # self.mv_masks = [self.mv_masks[i] for i in ids]
-
-                    if self.opt.dpt:
-                        from dpt import DepthNormalEstimation
-                        # noraml estimation
-                        normal_estimate_model = DepthNormalEstimation(ckpt_path=self.opt.normal_ckpt_path)  
-                        normals = normal_estimate_model(torch.stack(self.mv_images)).clamp(min=0, max=1)
-                        normals = normals * torch.stack(self.mv_masks)  + (1 - torch.stack(self.mv_masks))
-                        self.mv_normals = normals * 2 - 1 
-
+   
         # prepare embeddings
         with torch.no_grad():
             if self.enable_sd:
@@ -242,7 +336,7 @@ class GUI:
             if self.enable_zero123:
                 self.guidance_zero123.get_img_embeds(self.input_img_torch)
 
-    def calc_noval_view_loss(self, step_ratio, loss, log_dir):
+    def calc_noval_view_loss(self, step_ratio, log_dir):
          ## novel view (manual batch)
         render_resolution = 128 if step_ratio < 0.3 else (256 if step_ratio < 0.6 else 512)
         # render_resolution = 512
@@ -285,11 +379,10 @@ class GUI:
             if self.opt.mvdream or self.opt.imagedream:
                 for view_i in range(1, 4):
                     pose_i = orbit_camera(self.opt.elevation + ver, hor + 90 * view_i, self.opt.radius + radius)
-                    poses.append(pose_i)
-
+                    poses.append(pose_i) 
                     cur_cam_i = MiniCam(pose_i, render_resolution, render_resolution, self.cam.fovy, self.cam.fovx, self.cam.near, self.cam.far)
                     out_i = self.renderer.render(cur_cam_i, bg_color=bg_color)
-
+  
                     images.append(out_i["image"]) # [3, H, W] in [0, 1] 
                     depths.append(out_i["surf_depth"]) 
                     rend_normals.append(out_i["rend_normal"])
@@ -310,46 +403,38 @@ class GUI:
         # # distortion loss  
         # loss += self.opt.lambda_distortion * rend_dist.mean()
         
-        loss = 0 
         # guidance loss
         if self.enable_sd:
-            if self.opt.mvdream or self.opt.imagedream: # image-input  
-                loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, poses, step_ratio=step_ratio if self.opt.anneal_timestep else None)
+            if self.opt.mvdream or self.opt.imagedream:  # mvdream / imagedream
+                loss = self.opt.lambda_sd * self.guidance_sd.train_step(images, poses, step_ratio=step_ratio if self.opt.anneal_timestep else None)
              
-            else: # text input 
-                loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio=step_ratio if self.opt.anneal_timestep else None)
+            else:  # sd 
+                loss = self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio=step_ratio if self.opt.anneal_timestep else None)
                  
-        if self.enable_zero123: 
+        if self.enable_zero123: # zero123 
             loss = loss + self.opt.lambda_zero123 * self.guidance_zero123.train_step(images, vers, hors, radii, step_ratio=step_ratio if self.opt.anneal_timestep else None, default_elevation=self.opt.elevation)
-        return loss, out_i
-
-
-    def get_known_view_loss(self):
-        
-        if self.opt.sv3d:
-            idx = random.randint(0, len(self.mv_images)-1)
-            cam, gt_image, gt_mask = self.mv_cameras[idx], self.mv_images[idx], self.mv_masks[idx] 
-        else:
-            cam, gt_image, gt_mask = self.fixed_cam, self.input_img_torch, self.input_mask_torch    
-
+        return loss  
+ 
+    def get_known_view_loss(self): 
+        idx = random.randint(0, len(self.mv_images)-1)
+        cam, gt_image, gt_mask = self.mv_cameras[idx], self.mv_images[idx], self.mv_masks[idx] 
+ 
         gs_out = self.renderer.render(cam) 
         image, alpha, rend_normal, surf_normal = gs_out["image"], gs_out["rend_alpha"], gs_out["rend_normal"], gs_out["surf_normal"]
         
         # image loss 
         loss = (1.0 - self.opt.lambda_dssim) * l1_loss(image, gt_image) + self.opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        
+       
         # mask loss  
-        # if self.step % 10 == 0:
-        # loss += self.opt.lambda_mask * l1_loss(gs_out["rend_alpha"], gt_mask)
-
-        # mask loss 
-        pool = torch.nn.MaxPool2d(9, stride=1, padding=4)
-        loss  += self.opt.lambda_mask * (alpha * (1 - pool(gt_mask))).mean()
-
+        loss  += self.opt.lambda_mask * (alpha * (1 - gt_mask)).mean()
+ 
         # distortion loss  
         if self.step > 3000:
             loss += self.opt.lambda_dist * gs_out["rend_dist"].mean()
-             
+
+        # vis_image = torch.cat([image, gt_image, rend_normal, surf_normal], dim=2) .permute(1, 2, 0) * 0.5 + 0.5
+        # cv2.imwrite(f'{self.opt.outdir}/{self.opt.save_path}/rend_normal_{self.step}.png', (vis_image.detach().cpu().numpy()[..., ::-1] * 255).astype(np.uint8))
+        
         # normal loss   
         if self.step > 7000:  
             loss += self.opt.lambda_normal * (1 - (rend_normal * surf_normal).sum(dim=0)).mean()    
@@ -357,7 +442,7 @@ class GUI:
             if self.opt.dpt:
                 gt_normal = self.mv_normals[idx] if self.opt.sv3d else self.input_normal_torch
                 loss += self.opt.lambda_normal_dpt * (1 - (gs_out["rend_normal_world"] * gt_normal).sum(dim=0)).mean() 
-
+         
         return loss, gs_out
 
     def train_step(self):
@@ -369,24 +454,26 @@ class GUI:
          
         self.step += 1
         step_ratio = min(1, self.step / self.opt.iters)
-
-        # update lr
+ 
         self.renderer.gaussians.update_learning_rate(self.step)
 
         if self.step % 1000 == 0:
             self.renderer.gaussians.oneupSHdegree()
-
-        loss = 0
-
+ 
+        loss, gs_out = self.get_known_view_loss() 
+        # if self.step > self.opt.density_end_iter: 
+            # loss += 0.01 * self.calc_noval_view_loss(step_ratio, log_dir)
+            
+        # loss = 0
         # known view
-        if self.input_img_torch is not None and not self.opt.imagedream and self.step % 1 == 0: 
-            known_view_loss, gs_out = self.get_known_view_loss()
-            loss += known_view_loss
+        # if self.input_img_torch is not None and not self.opt.imagedream and self.step % 1 == 0: 
+        #     known_view_loss, gs_out = self.get_known_view_loss()
+        #     loss += known_view_loss
         
         # novel view
-        if self.enable_sd or self.enable_zero123:
-            guidance_loss, gs_out = self.calc_noval_view_loss(step_ratio, loss, log_dir)
-            loss += guidance_loss
+        # if self.enable_sd or self.enable_zero123:
+        #     guidance_loss, gs_out = self.calc_noval_view_loss(step_ratio, loss, log_dir)
+        #     loss += guidance_loss
  
         # optimize step
         loss.backward()
@@ -394,7 +481,7 @@ class GUI:
         
         with torch.no_grad():
             # Densification
-            if self.step < opt.density_end_iter:
+            if self.step < self.opt.density_end_iter:
                 viewspace_point_tensor, visibility_filter, radii = gs_out["viewspace_points"], gs_out["visibility_filter"], gs_out["radii"]
                 self.renderer.gaussians.max_radii2D[visibility_filter] = torch.max(self.renderer.gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 self.renderer.gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
@@ -425,13 +512,6 @@ class GUI:
                 "_log_train_log",
                 f"step = {self.step: 5d} (+{self.train_steps: 2d}) loss = {loss.item():.4f}",
             )
-
-        # dynamic train steps (no need for now)
-        # max allowed train time per-frame is 500 ms
-        # full_t = t / self.train_steps * 16
-        # train_steps = min(16, max(4, int(16 * 500 / full_t)))
-        # if train_steps > self.train_steps * 1.2 or train_steps < self.train_steps * 0.8:
-        #     self.train_steps = train_steps
 
     @torch.no_grad()
     def test_step(self):
@@ -550,8 +630,6 @@ class GUI:
             cnt = torch.zeros((h, w, 1), device=self.device, dtype=torch.float32)
 
             # self.prepare_train() # tmp fix for not loading 0123
-            # vers = [0]
-            # hors = [0]
             vers = [0] * 8 + [-45] * 8 + [45] * 8 + [-89.9, 89.9]
             hors = [0, 45, -45, 90, -90, 135, -135, 180] * 3 + [0, 0]
 
