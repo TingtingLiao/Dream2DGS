@@ -1,7 +1,13 @@
 # Dream2DGS
 Dream2DGS is a tool for text/image to 3D generation based on [**2D Gaussian Splatting**](https://github.com/hbb1/2d-gaussian-splatting) and [**DreamGaussian**](https://dreamgaussian.github.io/).
  
- 
+## Update log 
+<details> <summary>Click to expand</summary>
+
+- **[2024/05/13]**: Fixed a bug in the segmentation mask.
+- **[2024/05/07]**: Released the initial codebase.
+</details>
+
 ## Gallery
 Here are some rendered gs results from Dream2DGS. From left to right are rendered rgb, rendered normal, normal from depth. 
 
@@ -13,12 +19,6 @@ https://github.com/TingtingLiao/Dream2DGS/assets/45743512/c14c160c-ace2-4aae-b8a
 
 https://github.com/TingtingLiao/Dream2DGS/assets/45743512/faf38b0d-0399-44da-ab40-55769476ac13
 
-## Update log 
-<details> <summary>Click to expand</summary>
-
-- **[2024/05/13]**: Fixed a bug in the segmentation mask.
-- **[2024/05/07]**: Released the initial codebase.
-</details>
 
 ## Install
 
@@ -62,7 +62,7 @@ python main.py --config configs/text_mv.yaml prompt="an ice cream" save_path="an
 python convert.py --model_path logs/zelda/zelda.ply  
 ```
 
-# Acknowledgement 
+## Acknowledgement 
 Special thanks to the projects and their contributors:
 * [2D Gaussian Splatting](https://github.com/hbb1/2d-gaussian-splatting)
   
