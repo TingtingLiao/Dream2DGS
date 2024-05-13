@@ -39,7 +39,10 @@ cd ..
 ```bash   
 # image-to-3d (sv3d)  
 python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_path=zelda
-   
+
+# text-to-3d (sd2.1 + sv3d)  
+python main.py --config configs/text_mv.yaml prompt="an ice cream" save_path="an ice cream" 
+
 # extract mesh  
 python convert.py --model_path logs/zelda/zelda.ply  
 ```

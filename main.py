@@ -73,7 +73,7 @@ class GUI:
                 self.negative_prompt = self.opt.negative_prompt 
 
             text2image_path = os.path.join(self.opt.outdir, self.opt.save_path, "text2image.png")
-            self.text_to_image(save_path=text2image_path)
+            self.text_to_image_sd(save_path=text2image_path)
             self.opt.input = text2image_path    
       
         # load input data from cmdline
@@ -110,7 +110,18 @@ class GUI:
         self.mv_normals = normals * torch.stack(self.mv_masks)   
 
     @torch.no_grad()
-    def text_to_image(self, num_frames=4, suffix=", 3d asset", image_size=256, save_path=None):
+    def text_to_image_sd(self, save_path): 
+        from guidance.sd_utils import StableDiffusion
+        sd_model = StableDiffusion(self.device, fp16=False) 
+        imgs = sd_model.prompt_to_img(self.prompt, self.negative_prompt, self.opt.ref_size, self.opt.ref_size, 50)
+
+        os.makedirs(os.path.dirname(save_path), exist_ok=True) 
+        rembg.remove(Image.fromarray(imgs[0]), session=self.bg_remover).save(save_path)
+
+        # Image.fromarray(imgs[0]).save(f'{self.opt.outdir}/{self.opt.save_path}/sd.png')
+        
+    @torch.no_grad()
+    def text_to_image_mvdream(self, num_frames=4, suffix=", 3d asset", image_size=256, save_path=None):
         from mvdream.model_zoo import build_model
         from mvdream.ldm.models.diffusion.ddim import DDIMSampler
         from mvdream.camera_utils import get_camera
@@ -128,9 +139,8 @@ class GUI:
         camera = camera.repeat(batch_size//num_frames,1).to(device)
  
         # with torch.autocast(device_type="cuda", dtype=torch.float16):
-        print("self.prompt: ", self.prompt)
         c = model.get_learned_conditioning([self.prompt+suffix]).to(device) 
-        uc = model.get_learned_conditioning([self.negative_prompt]).to(device)
+        uc = model.get_learned_conditioning([""]).to(device)
         uc_ = {
             "context": uc.repeat(batch_size,1,1), 
             "camera": camera,
@@ -201,23 +211,17 @@ class GUI:
         """ image: [B, H, W, 3] in [0, 255]"""
         mv_images = [] 
         mv_masks = []
-
-        # pool = torch.nn.MaxPool2d(9, stride=1, padding=4)
         for image in np_images:  
             image = cv2.resize(image, (self.opt.ref_size, self.opt.ref_size), interpolation=cv2.INTER_AREA) 
             image = np.asarray(rembg.remove(Image.fromarray(image), session=self.bg_remover)) / 255.0 
             
-            mask, img = image[..., 3:], image[..., :3] 
-             
+            mask, img = image[..., 3:], image[..., :3]  
             img = torch.from_numpy(img).float().permute(2, 0, 1).to(self.device) 
             mask = torch.from_numpy(mask).float().permute(2, 0, 1).to(self.device) 
- 
             img = img * mask   
             if self.opt.white_background:
                 img += (1 - mask) 
-            
-            # cv2.imwrite(f'{self.opt.outdir}/{self.opt.save_path}/img.png', (img * mask + (1 - mask)).permute(1, 2, 0).detach().cpu().numpy()[..., ::-1] * 255)
-         
+             
             mv_images.append(img)
             mv_masks.append(mask) 
         return mv_images, mv_masks
@@ -266,24 +270,7 @@ class GUI:
         self.renderer.gaussians.training_setup(self.opt)
         # do not do progressive sh-level
         self.renderer.gaussians.active_sh_degree = self.renderer.gaussians.max_sh_degree
-       
-        # default camera
-        if self.opt.mvdream or self.opt.imagedream:
-            # the second view is the front view for mvdream/imagedream.
-            pose = orbit_camera(self.opt.elevation, 90, self.opt.radius)
-        else:
-            pose = orbit_camera(self.opt.elevation, 0, self.opt.radius)
-
-        camera_setting = dict(
-            width=self.opt.ref_size,
-            height=self.opt.ref_size,
-            fovy=self.cam.fovy,
-            fovx=self.cam.fovx,
-            znear=self.cam.near,
-            zfar=self.cam.far,
-        )
-        self.fixed_cam = MiniCam(pose, **camera_setting)
-
+        
         self.enable_sd = self.opt.lambda_sd > 0 and self.prompt != ""
         self.enable_zero123 = self.opt.lambda_zero123 > 0 and self.input_img is not None
 
@@ -319,13 +306,8 @@ class GUI:
 
         def resize_image(image):
             return F.interpolate(image, (self.opt.ref_size, self.opt.ref_size), mode="bilinear", align_corners=False)
-
-        # input image
-        if self.input_img is not None:
-            self.input_img_torch = resize_image(np_image_to_tensor(self.input_img).unsqueeze(0)).squeeze(0) 
-            self.input_mask_torch = resize_image(np_image_to_tensor(self.input_mask).unsqueeze(0)).squeeze(0) 
-   
-        # prepare embeddings
+ 
+        # prepare embeddings [todo, image embedding, try zero123]
         with torch.no_grad():
             if self.enable_sd:
                 if self.opt.imagedream:
