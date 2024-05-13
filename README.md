@@ -3,7 +3,9 @@ An implementation of the text-to-3D model based on [**2D Gaussian Splatting**](h
  
  
 https://github.com/TingtingLiao/Dream2DGS/assets/45743512/8e16dab5-0369-4405-8d1c-57c205c9c0a7
+
 https://github.com/TingtingLiao/Dream2DGS/assets/45743512/62d9f243-b067-4a08-ac96-44ef65516cfe
+
 https://github.com/TingtingLiao/Dream2DGS/assets/45743512/c14c160c-ace2-4aae-b8ae-54511211220c
 
 ## Install
