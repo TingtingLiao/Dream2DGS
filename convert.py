@@ -16,7 +16,7 @@ from gs_model import GaussianModel
 from utils.mesh_utils import GaussianExtractor, to_cam_open3d, post_process_mesh, Mesh
 from utils.render_utils import generate_path, create_videos
 from utils.mesh_renderer import MeshRenderer
-from cam_utils import orbit_camera, OrbitCamera, look_at 
+from utils.cam_utils import orbit_camera, OrbitCamera, look_at 
 import open3d as o3d
 
 
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=True)
 
     # Load the model
-    gs_renderer = Renderer(sh_degree=0)  
+    gs_renderer = Renderer(sh_degree=3)  
     gs_renderer.gaussians.load_ply(args.model_path) 
     gaussExtractor = GaussianExtractor(gs_renderer)    
       

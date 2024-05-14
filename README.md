@@ -4,8 +4,9 @@ Dream2DGS is a tool for text/image to 3D generation based on [**2D Gaussian Spla
 ## Update log 
 <details> <summary>Click to expand</summary>
 
-- **[2024/05/13]**: Fixed a bug in the segmentation mask.
-- **[2024/05/07]**: Released the initial codebase.
+- **[2024/05/13]**: Fixed segmentation bug.
+- **[2024/05/07]**: Released the initial code.
+
 </details>
 
 ## Gallery
@@ -59,7 +60,7 @@ python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_p
 python main.py --config configs/text_mv.yaml prompt="an ice cream" save_path="an ice cream" 
 
 # extract mesh  
-python convert.py --model_path logs/zelda/zelda.ply  
+python convert.py --model_path logs/zelda/zelda_gs.ply  
 ```
 
 ## Acknowledgement 
