@@ -82,6 +82,7 @@ def generate_cameras(render_resolution=512, fov=49.1, radius=2.5, num_cameras=10
         cameras.append(cur_cam)
     return cameras
 
+
 if __name__ == "__main__": 
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", required=True, type=str)
@@ -100,18 +101,21 @@ if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=True)
 
     # Load the model
-    gs_renderer = Renderer(sh_degree=3)  
+    gs_renderer = Renderer(sh_degree=3, white_background=True)  
     gs_renderer.gaussians.load_ply(args.model_path) 
     gaussExtractor = GaussianExtractor(gs_renderer)    
       
     n_fames = 200 
+    radius = 2 
+    fov = 49.1 
     cameras = orbit_camera_fibonacci(n_fames, render_resolution=512, fov=49.1)  
+    # cameras = generate_cameras(render_resolution=512, fov=49.1, radius=radius, num_cameras=n_fames, pitch = -20)
     # render frames 
     gaussExtractor.reconstruction(cameras)
     # extract mesh 
     if args.unbounded: 
         mesh = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res)
-    else: 
+    else:
         mesh = gaussExtractor.extract_mesh_bounded(voxel_size=args.voxel_size, sdf_trunc=0.05, depth_trunc=args.depth_trunc)
     mesh = post_process_mesh(mesh, cluster_to_keep=args.num_cluster)
     # save mesh 
@@ -138,20 +142,19 @@ if __name__ == "__main__":
         mesh.auto_normal()
         mesh.auto_uv()
         mesh = mesh.to(device)
-
-        num_cameras = 16
-        cameras = orbit_camera_fibonacci(num_cameras, render_resolution=512, fov=49.1)
-        gaussExtractor.reconstruction(cameras)
-
-        c2ws = torch.stack([cam.world_view_transform for cam in cameras], dim=0).float().to(device=device)
-        f = 0.5 / np.tan(np.deg2rad(49.1 / 2)) 
-        intrinsics = torch.tensor([f, f, 0.5, 0.5], device=device).float() 
  
-        bake_alphas = gaussExtractor.alphamaps.permute(0, 2, 3, 1).float() # [num_cameras, H, W, 1]
-        bake_images = gaussExtractor.rgbmaps.permute(0, 2, 3, 1).float()
+        num_cameras = 32 
+        cameras = generate_cameras(render_resolution=512, fov=fov, radius=radius, num_cameras=num_cameras, pitch = 0)
+        gaussExtractor.reconstruction(cameras)
+        bake_alphas = gaussExtractor.alphamaps.permute(0, 2, 3, 1).float().to(device) # [num_cameras, H, W, 1]
+        bake_images = gaussExtractor.rgbmaps.permute(0, 2, 3, 1).float().to(device) # [num_cameras, H, W, 3]
         bake_images = (bake_images  - (1 - bake_alphas)) / bake_alphas.clamp(min=1e-6)
+          
+        c2ws = torch.stack([cam.world_view_transform.transpose(0, 1).inverse() for cam in cameras], dim=0).float().to(device=device)
+        f = 0.5 / np.tan(np.deg2rad(fov / 2)) 
+        intrinsics = torch.tensor([f, f, 0.5, 0.5], device=device).float() 
 
-        save_path = f"{save_dir}/model.obj"  
+        save_path = f"{save_dir}/model.obj"
         texture = mesh_renderer.bake_multiview(mesh, bake_images, bake_alphas, c2ws, intrinsics)
         mesh.albedo = texture
  
