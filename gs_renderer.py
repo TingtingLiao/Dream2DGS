@@ -101,7 +101,7 @@ class Renderer:
         override_color=None, 
         compute_cov3D_python=False,
         convert_SHs_python=False, 
-        depth_ratio=0.1
+        depth_ratio=0.
     ):
 
         """
@@ -203,7 +203,8 @@ class Renderer:
         # get normal map
         render_normal_world = allmap[2:5]
         render_normal_camera = (render_normal_world.permute(1,2,0) @ (viewpoint_camera.world_view_transform[:3,:3].T)).permute(2,0,1)
-        
+        # render_normal_camera = render_normal_camera * render_alpha.detach()
+
         # get median depth map
         render_depth_median = allmap[5:6]
         render_depth_median = torch.nan_to_num(render_depth_median, 0, 0)
@@ -234,7 +235,7 @@ class Renderer:
             "viewspace_points": means2D,
             "visibility_filter" : radii > 0,
             "radii": radii,
-            'rend_alpha': render_alpha,
+            'alpha': render_alpha,
             'rend_normal_world': render_normal_world,
             'rend_normal': render_normal_camera,
             'rend_dist': render_dist,

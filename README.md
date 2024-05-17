@@ -62,7 +62,7 @@ python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_p
 python main.py --config configs/text_mv.yaml prompt="an ice cream" save_path="an ice cream" 
 
 # extract mesh  
-python convert.py --model_path logs/zelda/zelda_gs.ply  
+python convert.py --model_path logs/zelda/zelda_gs.ply --optimize_texture
 
 # using normal supervision set dpt=True 
 python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_path=zelda dpt=True 

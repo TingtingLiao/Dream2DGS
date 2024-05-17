@@ -17,6 +17,8 @@ from utils.grid_put import mipmap_linear_grid_put_2d
 from utils.mesh import Mesh, safe_normalize
 from utils.loss_utils import l1_loss, ssim
 from gs_renderer import Renderer, MiniCam
+from guidance.sv3d import build_sv3d_model
+from guidance.sv3d import sample as sv3d_pipe 
 
 
 class GUI:
@@ -55,7 +57,7 @@ class GUI:
         self.input_img_torch = None
         self.input_mask_torch = None
         self.overlay_input_img = False
-        self.overlay_input_img_ratio = 0.5
+        self.overlay_input_img_ratio = 0.
 
         # input text
         self.prompt = ""
@@ -66,33 +68,29 @@ class GUI:
         self.step = 0
         self.train_steps = 1  # steps per rendering loop
         
+        self.load_models() 
+
         # override prompt from cmdline
         if self.opt.prompt is not None:
             self.prompt = self.opt.prompt
             if self.opt.negative_prompt is not None:
                 self.negative_prompt = self.opt.negative_prompt 
 
-            text2image_path = os.path.join(self.opt.outdir, self.opt.save_path, "text2image.png")
-            self.text_to_image_sd(save_path=text2image_path)
-            self.opt.input = text2image_path    
+            # text2image_path = os.path.join(self.opt.outdir, self.opt.save_path, "text2image.png")
+            # self.text_to_image_sd(save_path=text2image_path)
+            # self.opt.input = text2image_path    
       
         # load input data from cmdline
-        if self.opt.input is not None:
-            # self.load_input(self.opt.input)
-            mv_np_images, self.mv_cameras = self.image_to_video() 
-            
-            self.mv_images, self.mv_masks = self.image_segmentation(mv_np_images)
-        
-        if self.opt.dpt:
-            self.normal_prediction()
-         
+        if self.opt.input is not None: 
+            self.prepare_multiview_images(self.opt.input) 
+             
         # override if provide a checkpoint
         if self.opt.load is not None:
             self.renderer.initialize(self.opt.load)            
         else:
             # initialize gaussians to a blob
             self.renderer.initialize(num_pts=self.opt.num_pts)
-
+         
         if self.gui:
             dpg.create_context()
             self.register_dpg()
@@ -176,20 +174,19 @@ class GUI:
         return mv_images, mv_cameras
     
     @torch.no_grad()
-    def image_to_video(self):
-        from guidance.sv3d import build_sv3d_model
-        from guidance.sv3d import sample as sv3d_pipe 
-        sv3d_model = build_sv3d_model(num_steps=30, device=self.device)
-
+    def prepare_multiview_images(self, image_path, save=False):  
         azimuths_deg = list(np.linspace(0, 360, 22) % 360)[1:]  
-        frames = sv3d_pipe( 
-            model=sv3d_model, 
-            input_path=self.opt.input,
+        mv_np_images = sv3d_pipe( 
+            model=self.sv3d_model, 
+            input_path=image_path,
             version='sv3d_p',
             elevations_deg=self.opt.elevation,
             azimuths_deg=azimuths_deg 
         )
-          
+        self.mv_images, self.mv_masks = self.image_segmentation(mv_np_images)  
+        if self.opt.dpt:
+            self.normal_prediction()
+
         # _frames = sv3d_pipe( 
         #     model=sv3d_model, 
         #     input_path=self.opt.input,
@@ -198,13 +195,12 @@ class GUI:
         #     azimuths_deg=azimuths_deg[1::2]
         # )
         # frames = [item for pair in zip(frames, _frames) for item in pair]
+        if save: 
+            os.makedirs(f'{self.opt.outdir}/{self.opt.save_path}', exist_ok=True)
+            imageio.mimwrite(f'{self.opt.outdir}/{self.opt.save_path}/sv3d.mp4', mv_np_images)
  
-        os.makedirs(f'{self.opt.outdir}/{self.opt.save_path}', exist_ok=True)
-        imageio.mimwrite(f'{self.opt.outdir}/{self.opt.save_path}/sv3d.mp4', frames)
-
-        torch.cuda.empty_cache() 
-        cameras = self.get_cameras(self.opt.elevation, azimuths_deg, self.opt.radius)
-        return frames, cameras 
+        self.mv_cameras = self.get_cameras(self.opt.elevation, azimuths_deg, self.opt.radius)
+         
  
     @torch.no_grad()
     def image_segmentation(self, np_images):
@@ -262,62 +258,63 @@ class GUI:
 
         self.last_seed = seed
 
-    def prepare_train(self):
+    def load_models(self):
+        if self.opt.sv3d:
+            self.sv3d_model = build_sv3d_model(num_steps=30, device=self.device) 
+        # self.enable_sd = self.opt.lambda_sd > 0 and self.prompt != ""
+        # self.enable_zero123 = self.opt.lambda_zero123 > 0 and self.input_img is not None
+         # # lazy load guidance model
+        # if self.guidance_sd is None and self.enable_sd:
+        #     if self.opt.mvdream:
+        #         print(f"[INFO] loading MVDream...")
+        #         from guidance.mvdream_utils import MVDream
+        #         self.guidance_sd = MVDream(self.device)
+        #         print(f"[INFO] loaded MVDream!")
+        #     elif self.opt.imagedream:
+        #         print(f"[INFO] loading ImageDream...")
+        #         from guidance.imagedream_utils import ImageDream
+        #         self.guidance_sd = ImageDream(self.device)
+        #         print(f"[INFO] loaded ImageDream!")
+        #     else:
+        #         print(f"[INFO] loading SD...")
+        #         from guidance.sd_utils import StableDiffusion
+        #         self.guidance_sd = StableDiffusion(self.device)
+        #         print(f"[INFO] loaded SD!")
 
+        # if self.guidance_zero123 is None and self.enable_zero123:
+        #     print(f"[INFO] loading zero123...")
+        #     from guidance.zero123_utils import Zero123
+        #     if self.opt.stable_zero123:
+        #         self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/stable-zero123-diffusers')
+        #     else:
+        #         self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/zero123-xl-diffusers')
+        #     print(f"[INFO] loaded zero123!")
+
+        # def np_image_to_tensor(image):
+        #     return torch.from_numpy(image).float().permute(2, 0, 1).to(self.device)
+
+        # def resize_image(image):
+        #     return F.interpolate(image, (self.opt.ref_size, self.opt.ref_size), mode="bilinear", align_corners=False)
+ 
+        # # [TODO change ] prepare embeddings  
+        # with torch.no_grad():
+        #     if self.enable_sd:
+        #         if self.opt.imagedream:
+        #             self.guidance_sd.get_image_text_embeds(self.input_img_torch, [self.prompt], [self.negative_prompt])
+        #         else:
+        #             self.guidance_sd.get_text_embeds([self.prompt], [self.negative_prompt])
+
+        #     if self.enable_zero123:
+        #         self.guidance_zero123.get_img_embeds(self.input_img_torch) 
+    
+    def prepare_train(self):
         self.step = 0
 
         # setup training
         self.renderer.gaussians.training_setup(self.opt)
         # do not do progressive sh-level
         self.renderer.gaussians.active_sh_degree = self.renderer.gaussians.max_sh_degree
-        
-        self.enable_sd = self.opt.lambda_sd > 0 and self.prompt != ""
-        self.enable_zero123 = self.opt.lambda_zero123 > 0 and self.input_img is not None
-
-        # lazy load guidance model
-        if self.guidance_sd is None and self.enable_sd:
-            if self.opt.mvdream:
-                print(f"[INFO] loading MVDream...")
-                from guidance.mvdream_utils import MVDream
-                self.guidance_sd = MVDream(self.device)
-                print(f"[INFO] loaded MVDream!")
-            elif self.opt.imagedream:
-                print(f"[INFO] loading ImageDream...")
-                from guidance.imagedream_utils import ImageDream
-                self.guidance_sd = ImageDream(self.device)
-                print(f"[INFO] loaded ImageDream!")
-            else:
-                print(f"[INFO] loading SD...")
-                from guidance.sd_utils import StableDiffusion
-                self.guidance_sd = StableDiffusion(self.device)
-                print(f"[INFO] loaded SD!")
-
-        if self.guidance_zero123 is None and self.enable_zero123:
-            print(f"[INFO] loading zero123...")
-            from guidance.zero123_utils import Zero123
-            if self.opt.stable_zero123:
-                self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/stable-zero123-diffusers')
-            else:
-                self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/zero123-xl-diffusers')
-            print(f"[INFO] loaded zero123!")
-
-        def np_image_to_tensor(image):
-            return torch.from_numpy(image).float().permute(2, 0, 1).to(self.device)
-
-        def resize_image(image):
-            return F.interpolate(image, (self.opt.ref_size, self.opt.ref_size), mode="bilinear", align_corners=False)
  
-        # prepare embeddings [todo, image embedding, try zero123]
-        with torch.no_grad():
-            if self.enable_sd:
-                if self.opt.imagedream:
-                    self.guidance_sd.get_image_text_embeds(self.input_img_torch, [self.prompt], [self.negative_prompt])
-                else:
-                    self.guidance_sd.get_text_embeds([self.prompt], [self.negative_prompt])
-
-            if self.enable_zero123:
-                self.guidance_zero123.get_img_embeds(self.input_img_torch)
-
     def calc_noval_view_loss(self, step_ratio, log_dir):
          ## novel view (manual batch)
         render_resolution = 128 if step_ratio < 0.3 else (256 if step_ratio < 0.6 else 512)
@@ -402,7 +399,7 @@ class GUI:
         cam, gt_image, gt_mask = self.mv_cameras[idx], self.mv_images[idx], self.mv_masks[idx] 
  
         gs_out = self.renderer.render(cam) 
-        image, alpha, rend_normal, surf_normal = gs_out["image"], gs_out["rend_alpha"], gs_out["rend_normal"], gs_out["surf_normal"]
+        image, alpha, rend_normal, surf_normal = gs_out["image"], gs_out["alpha"], gs_out["rend_normal"], gs_out["surf_normal"]
         
         # image loss 
         loss = (1.0 - self.opt.lambda_dssim) * l1_loss(image, gt_image) + self.opt.lambda_dssim * (1.0 - ssim(image, gt_image))
@@ -443,20 +440,7 @@ class GUI:
             self.renderer.gaussians.oneupSHdegree()
  
         loss, gs_out = self.get_known_view_loss() 
-        # if self.step > self.opt.density_end_iter: 
-            # loss += 0.01 * self.calc_noval_view_loss(step_ratio, log_dir)
-            
-        # loss = 0
-        # known view
-        # if self.input_img_torch is not None and not self.opt.imagedream and self.step % 1 == 0: 
-        #     known_view_loss, gs_out = self.get_known_view_loss()
-        #     loss += known_view_loss
         
-        # novel view
-        # if self.enable_sd or self.enable_zero123:
-        #     guidance_loss, gs_out = self.calc_noval_view_loss(step_ratio, loss, log_dir)
-        #     loss += guidance_loss
- 
         # optimize step
         loss.backward()
         ender.record()
@@ -520,13 +504,16 @@ class GUI:
             )
 
             out = self.renderer.render(cur_cam, self.gaussain_scale_factor)
-
-            buffer_image = out[self.mode]  # [3, H, W]
+ 
+            buffer_image = out[self.mode] if self.mode in ["image", "alpha"] else out["surf_"+self.mode]  # [3, H, W]
 
             if self.mode in ['depth', 'alpha']:
                 buffer_image = buffer_image.repeat(3, 1, 1)
                 if self.mode == 'depth':
                     buffer_image = (buffer_image - buffer_image.min()) / (buffer_image.max() - buffer_image.min() + 1e-20)
+            
+            if self.mode == 'normal':
+                buffer_image = buffer_image * 0.5 + 0.5 
 
             buffer_image = F.interpolate(
                 buffer_image.unsqueeze(0),
@@ -806,8 +793,9 @@ class GUI:
                     # only one item
                     for k, v in app_data["selections"].items():
                         dpg.set_value("_log_input", k)
-                        self.load_input(v)
-
+                        # self.load_input(v) 
+                        self.prepare_multiview_images(v) 
+            
                     self.need_update = True
 
                 with dpg.file_dialog(
@@ -944,7 +932,7 @@ class GUI:
                     self.need_update = True
 
                 dpg.add_combo(
-                    ("image", "depth", "alpha"),
+                    ("image", "depth", "alpha", "normal"),
                     label="mode",
                     default_value=self.mode,
                     callback=callback_change_mode,
@@ -1098,7 +1086,7 @@ class GUI:
             rand_normal = (out["rend_normal"] * 0.5 + 0.5).permute(1, 2, 0).cpu().numpy() * 255 
             surf_normal = (out["surf_normal"] * 0.5 + 0.5).permute(1, 2, 0).cpu().numpy() * 255
             
-            alpha = out["rend_alpha"].permute(1, 2, 0).cpu().numpy()  
+            alpha = out["alpha"].permute(1, 2, 0).cpu().numpy()  
             image = image * alpha + (1 - alpha) * 255
             rand_normal = rand_normal * alpha + (1 - alpha) * 255
             surf_normal = surf_normal * alpha + (1 - alpha) * 255
