@@ -58,12 +58,15 @@ cd ..
 # image-to-3d (sv3d)  
 python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_path=zelda
 
+# gui
+python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_path=zelda gui=True
+
 # text-to-3d (sd2.1 + sv3d)  
 python main.py --config configs/text_mv.yaml prompt="an ice cream" save_path="an ice cream" 
 
 # extract mesh  
-python convert.py --model_path logs/zelda/zelda_gs.ply --optimize_texture
-
+python convert.py --model_path logs/zelda/zelda_gs.ply --optimize_texture 
+ 
 # using normal supervision set dpt=True 
 python main.py --config configs/image_sv3d.yaml input=data/zelda_rgba.png save_path=zelda dpt=True 
 
