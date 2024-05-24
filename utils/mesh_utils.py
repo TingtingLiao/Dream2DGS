@@ -107,7 +107,7 @@ class GaussianExtractor(object):
             render_pkg = self.render.render(viewpoint_cam)
  
             rgb = render_pkg['image']
-            alpha = render_pkg['rend_alpha']
+            alpha = render_pkg['alpha']
             normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
             depth = render_pkg['surf_depth']
             depth_normal = render_pkg['surf_normal']
