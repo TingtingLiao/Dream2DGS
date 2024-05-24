@@ -7,8 +7,8 @@
 # under the terms of the LICENSE.md file.
 #
 # For inquiries contact  huangbb@shanghaitech.edu.cn
-#
 
+import cv2 
 import torch
 import numpy as np
 import os
@@ -38,7 +38,7 @@ def post_process_mesh(mesh, cluster_to_keep=1000):
     # n_cluster = np.sort(cluster_n_triangles.copy())[-cluster_to_keep]
     # n_cluster = max(n_cluster, 500) # filter meshes smaller than 50
     
-    triangles_to_remove = cluster_n_triangles[triangle_clusters] < 500
+    triangles_to_remove = cluster_n_triangles[triangle_clusters] < 5000
     mesh_0.remove_triangles_by_mask(triangles_to_remove)
     mesh_0.remove_unreferenced_vertices()
     mesh_0.remove_degenerate_triangles()
@@ -95,8 +95,6 @@ class GaussianExtractor(object):
         self.points = []
         self.viewpoint_stack = []
 
- 
-
     @torch.no_grad()
     def reconstruction(self, cameras):
         """
@@ -144,9 +142,9 @@ class GaussianExtractor(object):
         print(f'sdf_trunc: {sdf_trunc}')
         print(f'depth_truc: {depth_trunc}')
 
-        # depth_trunc = 4 
-        # voxel_size = 4.0 / 512
-        # sdf_trunc = 0.04 
+        depth_trunc = 4 
+        voxel_size = 4.0 / 512
+        sdf_trunc = 0.04 
 
         volume = o3d.pipelines.integration.ScalableTSDFVolume(
             voxel_length= voxel_size,
@@ -281,6 +279,17 @@ class GaussianExtractor(object):
         _, rgbs = compute_unbounded_tsdf(torch.tensor(np.asarray(mesh.vertices)).float().cuda(), inv_contraction=None, voxel_size=voxel_size, return_rgb=True)
         mesh.vertex_colors = o3d.utility.Vector3dVector(rgbs.cpu().numpy())
         return mesh
+
+    @torch.no_grad()
+    def export_video(self, save_dir):
+        # save self.rgbmaps as video
+        num_frames = len(self.rgbmaps)
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')   
+        out_video = cv2.VideoWriter(f'{save_dir}/rgbmaps.mp4', fourcc, num_frames / 4, (self.rgbmaps.shape[2], self.rgbmaps.shape[3]))
+        for i in range(num_frames):
+            out_video.write((self.rgbmaps[i].permute(1,2,0).cpu().numpy()[..., ::-1] * 255).astype(np.uint8))
+        out_video.release()
+
 
     @torch.no_grad()
     def export_image(self, path):
